@@ -2,4 +2,4 @@ pyTelegramBotAPI
 python-dotenv
 pyinflect
 requests
-httpx[http2]
+wonderwords

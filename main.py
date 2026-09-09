@@ -3,16 +3,17 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyinflect import getAllInflections
 from threading import Lock
 from re import compile
+from itertools import chain, islice
+from wonderwords import RandomWord
 
 import os
 import telebot
 import datetime
 import requests
-import asyncio
-import httpx
 import json
 
 DATA = {}
+random_word = RandomWord()
 random_words = []
 
 dotenv_path = find_dotenv()
@@ -20,7 +21,8 @@ load_dotenv(dotenv_path)
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
-API_KEY = os.getenv('API_KEY')
+DICTIONARY_API_KEY = os.getenv('DICTIONARY_API_KEY')
+THESAURUS_API_KEY = os.getenv('THESAURUS_API_KEY')
 
 lock = Lock()
 
@@ -33,14 +35,14 @@ def echo_all(message):
 
 def main_menu():
     main_menu_buttons = [
-        [InlineKeyboardButton("Learn", callback_data="learnButton"),
-         InlineKeyboardButton("Review", callback_data="reviewButton")]
+        [InlineKeyboardButton("Review", callback_data="reviewButton"),
+         InlineKeyboardButton("Learn", callback_data="learnButton")]
     ]
     return InlineKeyboardMarkup(main_menu_buttons)
 def learn_menu():
     learn_menu_buttons = [
-        [InlineKeyboardButton("Start", callback_data="startButton"),
-         InlineKeyboardButton("Refresh", callback_data="refreshButton")]
+        [InlineKeyboardButton("Refresh", callback_data="refreshButton"),
+         InlineKeyboardButton("Start", callback_data="startButton")]
     ]
     return InlineKeyboardMarkup(learn_menu_buttons)
 def dictionary_menu(total: int, word_index: int = 0, page_index: int = 0):
@@ -55,21 +57,18 @@ def dictionary_menu(total: int, word_index: int = 0, page_index: int = 0):
          InlineKeyboardButton('Next', callback_data=f"dictionary-{next_word}-0")]
     ]
     return InlineKeyboardMarkup(dictionary_menu_buttons)
+def thesaurus_menu(total: int, word_index: int = 0, page_index: int = 0):
+    previous_page, next_page = (page_index - 1) % total, (page_index + 1) % total
+    thesaurus_menu_buttons = [
+        [InlineKeyboardButton('⬅', callback_data=f"thesaurus-{word_index}-{previous_page}"),
+         InlineKeyboardButton(f"{page_index+1}/{total}", callback_data="none"),
+         InlineKeyboardButton('➡', callback_data=f"thesaurus-{word_index}-{next_page}")],
+        [InlineKeyboardButton('Go back to the Dictionary', callback_data=f"dictionary-{word_index}-0")]
+    ]
+    return InlineKeyboardMarkup(thesaurus_menu_buttons)
 
-async def fetch_word(client: httpx.AsyncClient, url: str):
-    response = await client.get(url)
-    data = response.json()
-    return data.get('data', [])[0]['word']
-async def get_random_words():
-    url = os.getenv('RANDOM_API_URL')
-    try:
-        async with httpx.AsyncClient() as client:
-            tasks = [fetch_word(client, f"{url}?type={pos}&count=1") for pos in ['noun', 'verb', 'adjective', 'adverb']]
-            results = await asyncio.gather(*tasks)
-            print(results)
-            return results
-    except Exception as e:
-        return f"Error connecting to the server: {e}"
+def get_random_words():
+    return [random_word.word(include_parts_of_speech=[pos]) for pos in ['adjectives', 'nouns', 'verbs']]
 
 replacements = {
     "bc": "", "ldquo": '"', "rdquo": '"', "p_br": "\n",
@@ -96,25 +95,26 @@ pos = {
     "adjective": ["JJR", "JJS"],
     "adverb": ["RBR", "RBS"],
 }
-def fetch_dictionary(index: int = 0):
-    def get_parsed(text):
-        if not text: return ""
 
-        for key, value in replacements.items():
-            text = text.replace(f"{{{key}}}", value)
+def get_parsed(text):
+    if not text: return ""
 
-        for regex_pattern, replacement in regex_patterns:
-            text = regex_pattern.sub(replacement, text)
+    for key, value in replacements.items():
+        text = text.replace(f"{{{key}}}", value)
 
-        text = regex_link1.sub(
-            lambda match: f"<i>{match.group(1).split('|')[1] if '|' in match.group(1) else match.group(1)}</i>", text
-            )
-        text = regex_link2.sub(
-            lambda match: f"<i>{match.group(1).split('|')[0]}</i>", text
+    for regex_pattern, replacement in regex_patterns:
+        text = regex_pattern.sub(replacement, text)
+
+    text = regex_link1.sub(
+        lambda match: f"<i>{match.group(1).split('|')[1] if '|' in match.group(1) else match.group(1)}</i>", text
         )
+    text = regex_link2.sub(
+        lambda match: f"<i>{match.group(1).split('|')[0]}</i>", text
+    )
 
-        return text
+    return text
 
+def fetch_dictionary(index: int = 0):
     def get_audio(audio):
         if not audio: return ""
 
@@ -179,7 +179,7 @@ def fetch_dictionary(index: int = 0):
     url = os.getenv('DICTIONARY_API_URL')
     word = random_words[index]
     try:
-        response = requests.get(url + word + "?key=" + API_KEY)
+        response = requests.get(url + word + "?key=" + DICTIONARY_API_KEY)
         response.raise_for_status()
         data = response.json()
         entries = data if isinstance(data, list) else [data]
@@ -187,6 +187,7 @@ def fetch_dictionary(index: int = 0):
         prs, vrs, fls, hws = {}, [], {}, set()
 
         for entry in entries:
+            if not isinstance(entry, dict): continue
             fl = entry.get('fl')
 
             if not prs:
@@ -225,10 +226,8 @@ def fetch_dictionary(index: int = 0):
         return f"Error connecting to the server: {e}"
 
 def get_dictionary(word_index: int = 0, page_index: int = 0):
-    global DATA
-    if not DATA: DATA = {word: fetch_dictionary(i) for i, word in enumerate(random_words)}
     word = list(DATA.keys())[word_index]
-    data = DATA[word]
+    data = DATA[word][0]
     definitions = data.get('def', {})
     posi = list(definitions.keys())
 
@@ -260,16 +259,152 @@ def get_dictionary(word_index: int = 0, page_index: int = 0):
 
     return text, total
 
+def fetch_thesaurus(index: int = 0):
+    def get_dt(entry):
+        for definition in entry.get('def', []):
+            for sseq in definition.get('sseq', []):
+                if not sseq or not sseq[0]: continue
+
+                sense = sseq[0]
+                sense_type, sense_data = sense[0], sense[1]
+
+                dt = None
+                if sense_type == 'sense': dt = sense_data.get('dt')
+                elif sense_type == 'pseq' and sense_data: dt = sense_data[0][1].get('dt')
+                elif sense_type == 'bs': dt = sense_data.get('sense').get('dt')
+
+                if dt: return dt[0][1][0] if dt[0][0] == 'uns' else dt
+
+        return None
+    def get_formatted(entry, dt):
+        hw = entry.get("hwi", {}).get("hw")
+        meta = entry.get("meta", {})
+
+        texti = []
+        visi = []
+        if dt:
+            for item in dt:
+                if isinstance(item, list) and item:
+                    item_type = item[0]
+                    if item_type == 'text':
+                        texti.append(item[1])
+                    elif item_type == 'vis':
+                        for subitem in item[1]:
+                            if 't' in subitem:
+                                visi.append(subitem['t'])
+
+        result = {
+            "hw": hw,
+            "text": get_parsed(" ".join(texti)),
+            "vis": [get_parsed(vis) for vis in visi],
+            "syns": list(islice(chain.from_iterable(meta.get("syns", [])), 5)),
+            "ants": list(islice(chain.from_iterable(meta.get("ants", [])), 5))
+        }
+
+        return result
+    url = os.getenv('THESAURUS_API_URL')
+    word = random_words[index]
+    try:
+        response = requests.get(url + word + "?key=" + THESAURUS_API_KEY)
+        response.raise_for_status()
+        data = response.json()
+        entries = data if isinstance(data, list) else [data]
+        result = {}
+
+        for entry in entries:
+            hw = entry.get('hwi', {}).get('hw')
+            fl = entry.get('fl')
+
+            if not fl or not hw: continue
+
+            dt = get_dt(entry)
+            if dt is not None:
+                if hw not in result: result[hw] = {}
+                result[hw][fl] = get_formatted(entry, dt)
+        for key in result:
+            result[key] = dict(sorted(result[key].items()))
+        return result
+    except Exception as e:
+        return f"Error connecting to the server: {e}"
+
+def get_thesaurus(word_index: int = 0, page_index: int = 0):
+    word = list(DATA.keys())[word_index]
+    data = DATA[word][1]
+    hws = list(data.keys())
+
+    total = len(hws)
+    page_index %= total
+    hw = hws[page_index]
+    entries = data[hw]
+
+    text = f"<b>{hw}</b>"
+
+    for i, (key, value) in enumerate(entries.items()):
+        text += f"\n\n► {key.upper()}"
+
+        if value.get('text'):
+            text += f"\n<b>{i+1}</b> "
+            text += f"{value['text'].strip()}:"
+            for i, vis in enumerate(value.get('vis', [])):
+                text += f"\n   ▸ <i>{vis}</i>"
+
+        text += f"\n\nSynonyms: <i>{', '.join(value.get('syns', []))}</i>"
+        ants = value.get('ants', [])
+        if ants: text += f"\nAntonyms: <i>{', '.join(ants)}</i>"
+
+    return text, total
+
+def load_data():
+    global DATA
+    DATA = {}
+    for i, word in enumerate(random_words):
+        dictionary = fetch_dictionary(i)
+        thesaurus = fetch_thesaurus(i)
+        if isinstance(dictionary, dict) and isinstance(thesaurus, dict):
+            DATA[word] = [dictionary, thesaurus]
+
+def get_formatted_words():
+    text = "Ponder these words, should they be granted unto thee:\n\n<pre>" + '\n'.join([f"<i>{pos:<16}</i>{word}" for word, pos in zip(random_words, ['(adjective)', '(noun)', '(verb)'])]) + "</pre>"
+    return text
+
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
-    if call.data == "learnButton":
+    if call.data in ["learnButton", "refreshButton"]:
         if not lock.acquire(blocking=False): return
         try:
+            bot.answer_callback_query(call.id, text="Fetching the words")
+            words = get_random_words()
+
+            if not isinstance(words, list):
+                bot.answer_callback_query(call.id, text="Error fetching the words")
+                return
+
             global random_words
-            bot.answer_callback_query(call.id, text="Loading the first word.")
-            random_words = asyncio.run(get_random_words())
+            random_words = words
+            message = get_formatted_words()
+
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=message,
+                parse_mode="HTML",
+                reply_markup=learn_menu()
+            )
+        finally:
+            lock.release()
+    elif call.data == "startButton":
+        if not lock.acquire(blocking=False): return
+        try:
+            bot.answer_callback_query(call.id, text="Loading the words")
+            load_data()
+
+            if not DATA:
+                bot.answer_callback_query(call.id, text="Error loading the words")
+                return
+
             message, total = get_dictionary()
             markup = dictionary_menu(total)
+
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
@@ -282,11 +417,32 @@ def handle_query(call):
     elif call.data.startswith('dictionary-'):
         if not lock.acquire(blocking=False): return
         try:
-            bot.answer_callback_query(call.id, text="Loading the next word.")
+            bot.answer_callback_query(call.id, text="Loading (Dictionary)")
+
             word_index, page_index = call.data.split('-')[1:]
             word_index, page_index = int(word_index), int(page_index)
             message, total = get_dictionary(word_index, page_index)
             markup = dictionary_menu(total, word_index, page_index)
+
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=message,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
+        finally:
+            lock.release()
+    elif call.data.startswith('thesaurus-'):
+        if not lock.acquire(blocking=False): return
+        try:
+            bot.answer_callback_query(call.id, text="Loading (Thesaurus)")
+
+            word_index, page_index = call.data.split('-')[1:]
+            word_index, page_index = int(word_index), int(page_index)
+            message, total = get_thesaurus(word_index, page_index)
+            markup = thesaurus_menu(total, word_index, page_index)
+
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
