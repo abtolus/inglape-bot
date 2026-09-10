@@ -3,3 +3,4 @@ python-dotenv
 pyinflect
 requests
 wonderwords
+openrouter

@@ -2,17 +2,23 @@ from dotenv import find_dotenv, load_dotenv
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyinflect import getAllInflections
 from threading import Lock
-from re import compile
+from re import compile, MULTILINE, sub, search, DOTALL
 from itertools import chain, islice
 from wonderwords import RandomWord
+from collections import deque
+from openrouter import OpenRouter
+from ast import literal_eval
 
 import os
 import telebot
 import datetime
 import requests
 import json
+import random
 
 DATA = {}
+PENDING = {}
+ANS = []
 random_word = RandomWord()
 random_words = []
 
@@ -21,6 +27,9 @@ load_dotenv(dotenv_path)
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
+
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+
 DICTIONARY_API_KEY = os.getenv('DICTIONARY_API_KEY')
 THESAURUS_API_KEY = os.getenv('THESAURUS_API_KEY')
 
@@ -29,9 +38,104 @@ lock = Lock()
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     bot.reply_to(message, "Howdy, how are you doing?", reply_markup=main_menu())
-@bot.message_handler(func=lambda message: True)
-def echo_all(message):
-    bot.reply_to(message, message.text, reply_markup=main_menu())
+regex_answers = compile(r"^(?:\d+\.\s+[\w\s.,!?()\'\"-]+(?:\n|$))+(?:\n(?:\d+\.\s+[\w\s.,!?()\'\"-]+(?:\n|$))+)*$", MULTILINE)
+def handle_answers(message):
+    if not bool(regex_answers.fullmatch(message.text.strip())):
+        send_format(message)
+        return
+
+    sections = message.text.strip().split('\n\n')
+    lines = [[sub(r"^\d+[\.\s]*", "", line).strip() for line in section.splitlines() if line.strip()] for section in sections]
+
+    if len(lines) != 4 or len(ANS) != 4 or not all(len(i) == len(j) for i, j in zip(lines, ANS)):
+        send_format(message)
+        return
+
+    result = check_answers(lines, message.chat.id)
+
+    if result: bot.send_message(
+        chat_id = message.chat.id,
+        text=result,
+        parse_mode="HTML"
+    )
+def send_format(message):
+    text = "Please provide your answers in the exact same format as the following:\n\n"
+    text += f"<pre>{'\n\n'.join(get_format())}</pre>"
+    call_message = bot.send_message(
+        chat_id=message.chat.id,
+        text=text,
+        parse_mode="HTML"
+    )
+    bot.register_next_step_handler(call_message, handle_answers)
+def get_format():
+    paragraph = "Curabitur lobortis quam sit amet augue porta hendrerit.\nMorbi efficitur ante sed lorem porttitor, a mollis purus sagittis.\nPellentesque nec erat sit amet nunc volutpat mollis sit amet nec nibh.\nMorbi dignissim risus vitae dui sollicitudin, at fermentum risus rhoncus.\nNam fermentum elit eu neque malesuada feugiat.\nAliquam porta est ac eros ultricies varius."
+
+    sentences = [sentence for sentence in paragraph.strip().split('\n')]
+    result = []
+
+    for _ in range(3):
+        result.append('\n'.join([f"{i+1}. {(words := sentences[i].split())[0].lower()} {words[1].lower()}" for i in range(len(ANS[0]))]))
+    result.append('\n'.join([f"{i+1}. {sentences[i]}" for i in range(len(ANS[0]))]))
+
+    return result
+
+def check_answers(answers, chat_id):
+    score = 0
+    total = sum(len(sublist) for sublist in answers)
+
+    text = "— RESULTS\n"
+
+    for i, j in zip(answers[0], ANS[0]):
+        text += f"\n{'✅' if i in j else '❌'} <i>{i}</i>"
+        score += int(i in j)
+
+    text += '\n'
+    for i, j in zip(answers[1], ANS[1]):
+        text += f"\n{'✅' if i == j else '❌'} <i>{i}</i>"
+        score += int(i == j)
+
+    text += '\n'
+    for i, j in zip(answers[2], ANS[2]):
+        text += f"\n{'✅' if i == j else '❌'} <i>{i}</i>"
+        score += int(i == j)
+
+    text += '\n'
+    stage1, stage2 = [j in i.lower() for i, j in zip(answers[3], ANS[3])], []
+    with OpenRouter(api_key=OPENROUTER_API_KEY) as client:
+        try:
+            sentences = "\n".join([f"{i+1}. {s}" for i, s in enumerate(answers[3])])
+            prompt = f"Inspect the following sentences for grammatical errors. Only return a Python list of True if it is correct, or False if it is incorrect, in the exact same order as the sentences.\nSentences:\n{sentences}"
+
+            response = client.chat.send(model="liquid/lfm-2.5-2.6b:free", messages=[{"role": "user", "content": prompt}])
+
+            match = search(r"\[.*?\]", response.choices[0].message.content, DOTALL)
+            if match: stage2 = literal_eval(match.group(0))
+        except Exception as e:
+            global PENDING
+            if e == "Provider returned error":
+                PENDING[chat_id] = answers
+                try_again(chat_id)
+    ANS[3] = [i and j for i, j in zip(stage1, stage2)]
+    for i, j in zip(answers[3], ANS[3]):
+        text += f"\n{'✅' if j else '❌'} <i>{i}</i>"
+        score += int(j)
+
+    final = round((score / total) * 100, 2)
+    text += f"\n\nYou <b>{'passed' if final >= 40 else 'failed'}</b> the Skill check with a score of {final}%."
+    return text
+def try_again(chat_id):
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Abort checking", callback_data="tryAgainButton-0"),
+         InlineKeyboardButton("Try again", callback_data="tryAgainButton-1")]
+    ])
+    message = "Too many requests are being sent at the moment. Please <b>Try again</b> later, or <b>Abort checking</b> if you do not need your answers to be evaluated."
+
+    bot.send_message(
+        chat_id=chat_id,
+        text=message,
+        parse_mode="HTML",
+        reply_markup=markup
+    )
 
 def main_menu():
     main_menu_buttons = [
@@ -52,9 +156,10 @@ def dictionary_menu(total: int, word_index: int = 0, page_index: int = 0):
         [InlineKeyboardButton('⬅', callback_data=f"dictionary-{word_index}-{previous_page}"),
          InlineKeyboardButton(f"{page_index+1}/{total}", callback_data="none"),
          InlineKeyboardButton('➡', callback_data=f"dictionary-{word_index}-{next_page}")],
-        [InlineKeyboardButton('Previous', callback_data=f"dictionary-{previous_word}-0"),
-         InlineKeyboardButton("Thesaurus", callback_data=f"thesaurus-{word_index}-0"),
-         InlineKeyboardButton('Next', callback_data=f"dictionary-{next_word}-0")]
+        [InlineKeyboardButton('Previous word', callback_data=f"dictionary-{previous_word}-0"),
+         InlineKeyboardButton('Next word', callback_data=f"dictionary-{next_word}-0")],
+        [InlineKeyboardButton('Skill check', callback_data="skillCheckButton-0"),
+         InlineKeyboardButton("Thesaurus", callback_data=f"thesaurus-{word_index}-0")]
     ]
     return InlineKeyboardMarkup(dictionary_menu_buttons)
 def thesaurus_menu(total: int, word_index: int = 0, page_index: int = 0):
@@ -308,8 +413,13 @@ def fetch_thesaurus(index: int = 0):
         response = requests.get(url + word + "?key=" + THESAURUS_API_KEY)
         response.raise_for_status()
         data = response.json()
+
         entries = data if isinstance(data, list) else [data]
         result = {}
+
+        if not isinstance(entries[0], dict):
+            result[word] = {"text": "This word does not have a thesaurus at the moment."}
+            return result
 
         for entry in entries:
             hw = entry.get('hwi', {}).get('hw')
@@ -340,6 +450,9 @@ def get_thesaurus(word_index: int = 0, page_index: int = 0):
     text = f"<b>{hw}</b>"
 
     for i, (key, value) in enumerate(entries.items()):
+        if key == 'text':
+            text += f"\n\n► {value}"
+            return text, total
         text += f"\n\n► {key.upper()}"
 
         if value.get('text'):
@@ -348,11 +461,53 @@ def get_thesaurus(word_index: int = 0, page_index: int = 0):
             for i, vis in enumerate(value.get('vis', [])):
                 text += f"\n   ▸ <i>{vis}</i>"
 
-        text += f"\n\nSynonyms: <i>{', '.join(value.get('syns', []))}</i>"
+        syns = value.get('syns', [])
+        if syns: text += f"\n\nSynonyms: <i>{', '.join(syns)}</i>"
         ants = value.get('ants', [])
         if ants: text += f"\nAntonyms: <i>{', '.join(ants)}</i>"
 
     return text, total
+
+def fetch_skill_check():
+    return [{"hw": entry.get('hw'), "text": entry.get('text'), "syns": entry.get('syns')} for word in random_words for value in DATA[word][1].values() for pos, entry in (next(iter(value.items())),) if pos != 'text']
+def get_skill_check():
+    global ANS
+
+    data = fetch_skill_check()
+    sections = deque(random.sample(data, k=5) if len(data) >= 5 else random.sample(data, k=len(data)) for _ in range(4))
+
+    text = f"Provide a synonym for each of the following:"
+    temporary = []
+    for i, entry in enumerate(sections.popleft()):
+        text += f"\n<b>{i+1}</b> <i>{entry.get('hw')}</i>"
+        temporary.append(entry.get('syns'))
+    ANS.append(temporary)
+    text += "\n\n"
+
+    text += f"Identify the term defined by each of the following:"
+    temporary = []
+    for i, entry in enumerate(sections.popleft()):
+        text += f"\n<b>{i+1}</b> <i>{entry.get('text').strip()}</i>"
+        temporary.append(entry.get('hw'))
+    ANS.append(temporary)
+    text += "\n\n"
+
+    text += f"Give a term matching each pair of synonyms in the following:"
+    temporary = []
+    for i, entry in enumerate(sections.popleft()):
+        text += f"\n<b>{i+1}</b> <i>{', '.join(entry.get('syns', []))}</i>"
+        temporary.append(entry.get('hw'))
+    ANS.append(temporary)
+    text += "\n\n"
+
+    text += f"Write sentences using each of the following:"
+    temporary = []
+    for i, entry in enumerate(sections.popleft()):
+        text += f"\n<b>{i+1}</b> <i>{entry.get('hw')}</i>"
+        temporary.append(entry.get('hw'))
+    ANS.append(temporary)
+
+    return text
 
 def load_data():
     global DATA
@@ -452,4 +607,53 @@ def handle_query(call):
             )
         finally:
             lock.release()
-bot.infinity_polling()
+    elif call.data.startswith('skillCheckButton'):
+        if not lock.acquire(blocking=False): return
+        try:
+            bot.answer_callback_query(call.id, text="Loading (Skill check)")
+            mode = int(call.data.split('-')[-1])
+
+            message = "Ready to solidify your knowledge with the Skill check?\n\n— NOTE <i>You won't be able to go back to the Dictionary and Thesaurus as soon as you continue</i>" if  mode == 0 else get_skill_check()
+            markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton('Not really', callback_data="dictionary-0-0"),
+                 InlineKeyboardButton('Yes, I am', callback_data="skillCheckButton-1")]
+            ])
+
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=message,
+                parse_mode="HTML",
+                reply_markup=markup if mode == 0 else None
+            )
+
+            if mode == 1: bot.register_next_step_handler(call.message, handle_answers)
+        finally:
+            lock.release()
+    elif call.data.startswith('tryAgainButton'):
+        if not lock.acquire(blocking=False): return
+        try:
+            chat_id = call.message.chat.id
+            bot.answer_callback_query(call.id, text="Loading (Try again)")
+            mode = int(call.data.split('-')[-1])
+            message = ""
+
+            bot.delete_message(
+                chat_id=chat_id,
+                message_id=call.message.message_id
+            )
+            if mode == 1:
+                answers = PENDING.pop(chat_id, None)
+                result = check_answers(answers, chat_id)
+                if result: message = result
+            else: message = "The Skill check was successfully aborted."
+
+            bot.send_message(
+                chat_id=chat_id,
+                text=message,
+                parse_mode="HTML",
+                reply_markup=main_menu() if mode == 0 else None
+            )
+        finally:
+            lock.release()
+bot.infinity_polling(skip_pending=True)
