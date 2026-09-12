@@ -4,3 +4,4 @@ pyinflect
 requests
 wonderwords
 openrouter
+mysql-connector-python
