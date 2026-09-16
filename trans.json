@@ -17,5 +17,6 @@
     "Give a term matching each pair of synonyms in the following: (The answers must be from the Dictionary and Thesaurus you recently learned)": "အောက်ဖော်ပြပါ အဓိပ္ပာယ်တူစကားလုံးများနှင့် အသင့်လျော်ဆုံးဖြစ်သည့် အဖြေများကို ရွေးချယ်၍ ပေးပို့ပါ။ အဖြေများသည် ယခုလေ့လာခဲ့သည့် (Dictionary) နှင့် (Thesaurus) တွင် ပါရှိရမည်။",
     "Write sentences using each of the following:": "အောက်ပါ စကားလုံးများကို အသုံးပြု၍ ပြီးပြည့်စုံသည့် စာကြောင်းများတည်ဆောက်ပါ။",
     "Connection kept dropping during the process of evaluating your answers. Should your network be stable, resend your answers.": "(Connection) ပြတ်တောက်မှုများကြောင့် သင်၏အဖြေလွှာကို စစ်ဆေးသည့်လုပ်ငန်းစဉ် မအောင်မြင်ပါ။ ကျေးဇူးပြု၍ အဖြေများကို ပြန်လည်ပေးပို့ပါ။",
-    "Connection kept dropping during the process of retrieving the words. Should your network be stable, select your recent words again:": "(Connection) ပြတ်တောက်မှုများကြောင့် စကားလုံးများကို ပြန်လည်ရယူသည့်လုပ်ငန်းစဉ် မအောင်မြင်ပါ။ ကျေးဇူးပြု၍ စကားလုံးများကို ပြန်လည်ရွေးချယ်ပါ။"
+    "Connection kept dropping during the process of retrieving the words. Should your network be stable, select your recent words again:": "(Connection) ပြတ်တောက်မှုများကြောင့် စကားလုံးများကို ပြန်လည်ရယူသည့်လုပ်ငန်းစဉ် မအောင်မြင်ပါ။ ကျေးဇူးပြု၍ စကားလုံးများကို ပြန်လည်ရွေးချယ်ပါ။",
+    "Since you have reached your daily limit of 15 words for today, come back tomorrow.": "သင်သည် ယနေ့အတွက် စကားလုံးအသစ် စုစုပေါင်း ၁၅ လုံး လေ့လာခဲ့သည်။ ထို့ကြောင့် မနက်ဖြန်မှသာ ဆက်လက်လေ့လာနိုင်မည် ဖြစ်သည်။"
 }

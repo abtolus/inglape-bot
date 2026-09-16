@@ -10,6 +10,7 @@ from ast import literal_eval
 from deep_translator import MyMemoryTranslator
 from concurrent.futures import ThreadPoolExecutor
 from time import sleep
+from tempfile import NamedTemporaryFile
 
 import os
 import telebot
@@ -18,9 +19,12 @@ import random
 import mysql.connector
 import json
 import urllib3
+import gzip
 
 with open('trans.json', "r", encoding="utf-8") as f:
     global_translations = json.load(f)
+with open('google-10000-english.txt', "r", encoding="utf-8") as f:
+    common_words = set(line.strip() for line in f)
 pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="inglapebot", pool_size=24,
     host=os.getenv('HOST'),
@@ -50,7 +54,7 @@ USER_DATA = {}
 def get_user_data(user_id: int) -> dict:
     if user_id not in USER_DATA:
         USER_DATA[user_id] = {
-            "data": {}, "pending": None, "answers": [], "random_words": [], "recent_words": [], "translations": {}, "is_active": False, "last_message": None, "settings": get_settings(user_id)
+            "data": {}, "pending": None, "answers": [], "random_words": [], "recent_words": [], "translations": {}, "is_active": False, "last_message": None, "last_voice": None, "settings": get_settings(user_id)
         }
     return USER_DATA[user_id]
 def clear_user_data(user_id: int) -> None:
@@ -61,8 +65,11 @@ random_word = RandomWord()
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
+class ExceptionHandler(telebot.ExceptionHandler):
+    def handle(self, exception):
+        if isinstance(exception, (ConnectionResetError, urllib3.exceptions.ProtocolError, requests.exceptions.ConnectionError, TimeoutError, urllib3.exceptions.ReadTimeoutError, requests.exceptions.ReadTimeout,)): return True
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN, exception_handler=ExceptionHandler())
 
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 DICTIONARY_API_URL = os.getenv('DICTIONARY_API_URL')
@@ -133,20 +140,24 @@ def upsert_user(user) -> None:
         with connection.cursor() as cursor:
             cursor.execute(query, values)
             connection.commit()
-def upsert_word(word: str, part_of_speech: str) -> int:
-    query = "INSERT INTO words (word, part_of_speech) VALUES (%s, %s) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+def upsert_word(word: str, part_of_speech: str, data: list) -> int:
+    string = json.dumps(data, ensure_ascii=False)
+    compressed = gzip.compress(string.encode("utf-8"), compresslevel=9)
+    query = "INSERT INTO words (word, part_of_speech, data) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
     with get_pool_connection() as connection:
         with connection.cursor() as cursor:
-            cursor.execute(query, (word, part_of_speech,))
+            cursor.execute(query, (word, part_of_speech, compressed,))
             connection.commit()
             return cursor.lastrowid
 def insert_log(user_id: int, word_id: int) -> None:
     query = "INSERT INTO logs (user_id, word_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE created_at = CURRENT_TIMESTAMP"
+    cleanup = "DELETE FROM logs WHERE user_id = %s AND id NOT IN (SELECT id FROM (SELECT id FROM logs WHERE user_id = %s ORDER BY created_at DESC LIMIT 50) AS subquery)"
     with get_pool_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(query, (user_id, word_id,))
+            cursor.execute(cleanup, (user_id, user_id,))
             connection.commit()
-def get_recent_words(user_id: int, limit: int = 15) -> list:
+def get_recent_words(user_id: int, limit: int = 45) -> list:
     query = "SELECT w.word, w.part_of_speech FROM logs l JOIN words w ON l.word_id = w.id WHERE l.user_id = %s ORDER BY l.created_at DESC LIMIT %s"
     with get_pool_connection() as connection:
         with connection.cursor() as cursor:
@@ -381,30 +392,74 @@ def fetch_thesaurus(word: str) -> dict:
     except Exception as e:
         return {"word": word, "error": str(e)}
 
+def get_parsed_data(word: str) -> tuple[dict | None, dict | None]:
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        dictionary_futures = executor.submit(fetch_dictionary, word)
+        thesaurus_futures = executor.submit(fetch_thesaurus, word)
+
+        dictionary_results = dictionary_futures.result().get('data')
+        thesaurus_results = thesaurus_futures.result().get('data')
+
+    if dictionary_results and thesaurus_results: 
+        parsed_dictionary = parse_dictionary(word, dictionary_results)
+        parsed_thesaurus = parse_thesaurus(word, thesaurus_results)
+        return parsed_dictionary, parsed_thesaurus
+    return None, None
+
+def reload_data(random_words: list[tuple[str, str]]) -> dict:
+    if not random_words: return {}
+
+    condition = " OR ".join(["(word = %s AND part_of_speech = %s)"] * len(random_words))
+    values = [subitem for item in random_words for subitem in item]
+
+    query = f"SELECT word, part_of_speech, data FROM words WHERE {condition}"
+    result = {}
+
+    with get_pool_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, values)
+            results = cursor.fetchall()
+            for word, part_of_speech, compressed in results:
+                data = gzip.decompress(compressed).decode("utf-8")
+                result[(word, part_of_speech)] = json.loads(data)
+
+    return result
+
 def load_data(user_id: int) -> None:
     user_data = get_user_data(user_id)
     random_words = user_data.get("random_words", [])
+    if not random_words: return
+
+    cache = reload_data(random_words)
+
     result = {}
+    missing = []
 
-    words = [w[0] for w in random_words]
-    with ThreadPoolExecutor(max_workers=6) as executor:
-        dictionary_futures = [executor.submit(fetch_dictionary, word) for word in words]
-        thesaurus_futures = [executor.submit(fetch_thesaurus, word) for word in words]
+    for word, pos in random_words:
+        if (word, pos) in cache: result[word] = cache[(word, pos)]
+        else: missing.append((word, pos))
 
-        dictionary_results = {future.result()['word']: future.result().get('data') for future in dictionary_futures if 'data' in future.result()}
-        thesaurus_results = {future.result()['word']: future.result().get('data') for future in thesaurus_futures if 'data' in future.result()}
+    if missing:
+        words = list({word[0] for word in missing})
+        apis = {}
 
-    for word in words:
-        if word in dictionary_results and word in thesaurus_results:
-            parsed_dictionary = parse_dictionary(word, dictionary_results[word])
-            parsed_thesaurus = parse_thesaurus(word, thesaurus_results[word])
-            entry = [parsed_dictionary, parsed_thesaurus]
+        with ThreadPoolExecutor(max_workers=min(6, len(words))) as executor:
+            futures = {executor.submit(get_parsed_data, word): word for word in words}
 
-            handle_translations(entry, user_id)
-            result[word] = entry
+            for future in futures:
+                parsed_word = futures[future]
+                parsed_dictionary, parsed_thesaurus = future.result()
+                if parsed_dictionary and parsed_thesaurus:
+                    data = [parsed_dictionary, parsed_thesaurus]
+                    handle_translations(data, user_id)
+                    apis[parsed_word] = data
 
-    if result:
-        user_data['data'] = result
+        for word, pos in missing:
+            if word in apis:
+                data = apis[word]
+                result[word] = data
+
+    if result: user_data['data'] = result
 
 def delete_message(chat_id: int, user_id: int):
     user_data = get_user_data(user_id)
@@ -555,6 +610,7 @@ def handle_answers(message, maximum: int = 3) -> None:
     ans = user_data.get("answers", [])
     random_words = user_data.get("random_words", [])
     settings = user_data.get("settings", {})
+    data = user_data.get("data", {})
 
     for attempt in range(1, maximum+1):
         try:
@@ -579,7 +635,13 @@ def handle_answers(message, maximum: int = 3) -> None:
                 )
 
                 for word, part_of_speech in random_words:
-                    insert_log(user_id, upsert_word(word, part_of_speech))
+                    insert_log(user_id, upsert_word(word, part_of_speech, data[word]))
+
+                last_voice = user_data.get("last_voice")
+                if last_voice:
+                    try:
+                        bot.delete_message(chat_id=message.chat.id, message_id=last_voice.message_id)
+                    except Exception: pass
 
                 clear_user_data(user_id)
                 user_data = get_user_data(user_id)
@@ -698,6 +760,25 @@ def try_again(chat_id: int) -> None:
         reply_markup=markup
     )
 
+def can_learn(user_id: int) -> bool: return get_count(user_id) < 15
+def get_count(user_id: int) -> int:
+    query = "SELECT COUNT(*) FROM logs WHERE user_id = %s AND DATE(created_at) = CURDATE()"
+    with get_pool_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, (user_id,))
+            result = cursor.fetchone()
+            return result[0] if result else 0
+def send_daily_limit(call, settings: dict) -> None:
+    bot.answer_callback_query(call.id, text="Daily limit reached", show_alert=True)
+    raw = "Since you have reached your daily limit of 15 words for today, come back tomorrow."
+    translated = get_global_translated(raw, settings.get('language', 'en-US'))
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=translated,
+        parse_mode="HTML"
+    )
+
 def main_menu() -> InlineKeyboardMarkup:
     main_menu_buttons = [
         [InlineKeyboardButton("Review", callback_data="selection-menu"),
@@ -740,10 +821,11 @@ def thesaurus_menu(total: int, word_index: int = 0, page_index: int = 0) -> Inli
     ]
     return InlineKeyboardMarkup(thesaurus_menu_buttons)
 
-def get_random_words() -> list:
-    return [
-        (random_word.word(include_parts_of_speech=[pos]), pos[:-1],) for pos in ['adjectives', 'nouns', 'verbs']
-    ]
+def get_random_word(pos: str) -> tuple[str, str]:
+    while True:
+        word = random_word.word(include_parts_of_speech=[pos])
+        if word in common_words: return (word, pos[:-1],)
+def get_random_words() -> list: return [get_random_word(pos) for pos in ['adjectives', 'nouns', 'verbs']]
 
 def get_dictionary(user_id: int, word_index: int = 0, page_index: int = 0):
     user_data = get_user_data(user_id)
@@ -897,6 +979,9 @@ def handle_query(call):
             bot.answer_callback_query(call.id, text="Processing your previous request")
             return
         try:
+            if not can_learn(user_id):
+                send_daily_limit(call, settings)
+                return
             bot.answer_callback_query(call.id, text="Fetching the words")
             recent_words = user_data.get("recent_words", [])
             words = random.sample(recent_words, k=3) if call.data.endswith('-1') else get_random_words()
@@ -934,9 +1019,8 @@ def handle_query(call):
 
             if mode == "menu":
                 bot.answer_callback_query(call.id, text="Loading (Review)")
-                raw = "Which method would you prefer for selecting your recent 15 words?"
+                raw = "Which method would you prefer for selecting your recent 45 words?"
                 message = get_global_translated(raw, settings['language'])
-                message += "\n\n— NOTE <i>With premium, have access to Manual selection and up to 45 words</i>"
                 markup = InlineKeyboardMarkup([
                     [InlineKeyboardButton("Manual", callback_data="selection-manual"),
                         InlineKeyboardButton("Automatic", callback_data="selection-automatic"),
@@ -1010,7 +1094,7 @@ def handle_query(call):
         finally:
             release_lock(user_id)
 
-    elif call.data == "startButton":
+    elif call.data.startswith("startButton"):
         if not acquire_lock(user_id):
             bot.answer_callback_query(call.id, text="Processing your previous request")
             return
@@ -1036,6 +1120,30 @@ def handle_query(call):
                 parse_mode="HTML",
                 reply_markup=markup
             )
+
+            media = []
+            for data in result.values():
+                dictionary = data[0]
+                audio = dictionary.get("prs", {}).get("audio")
+                if audio:
+                    response = requests.get(audio)
+                    if response.status_code == 200:
+                        temporary = NamedTemporaryFile(delete=False, suffix=".mp3")
+                        temporary.write(response.content)
+                        temporary.close()
+                        media.append(telebot.types.InputMediaAudio(media=open(temporary.name, "rb"), title=dictionary.get("hw")))
+            sent = None
+            if 1 < len(media) < 11: sent = bot.send_media_group(
+                chat_id=call.message.chat.id,
+                media=media
+            )
+            elif len(media) == 1:
+                sent = bot.send_audio(
+                    chat_id=call.message.chat.id,
+                    audio=media[0].media,
+                    title=media[0].title
+                )
+            if sent: user_data['last_voice'] = sent
         finally:
             release_lock(user_id)
 
