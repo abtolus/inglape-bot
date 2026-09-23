@@ -1,0 +1,32 @@
+from os import getenv
+from dotenv import find_dotenv, load_dotenv
+
+dotenv_path = find_dotenv()
+load_dotenv(dotenv_path)
+
+BOT_TOKEN = getenv('BOT_TOKEN')
+
+OPENROUTER_API_KEY = getenv('OPENROUTER_API_KEY')
+
+DICTIONARY_API_KEY = getenv('DICTIONARY_API_KEY')
+THESAURUS_API_KEY = getenv('THESAURUS_API_KEY')
+DICTIONARY_API_URL = getenv('DICTIONARY_API_URL')
+THESAURUS_API_URL = getenv('THESAURUS_API_URL')
+
+MYSQL_HOST = getenv('MYSQL_HOST')
+MYSQL_USER = getenv('MYSQL_USER')
+MYSQL_PASSWORD = getenv('MYSQL_PASSWORD')
+MYSQL_PORT = int(getenv('MYSQL_PORT'))
+MYSQL_DATABASE = getenv('MYSQL_DATABASE')
+
+VALKEY_HOST = getenv('VALKEY_HOST')
+VALKEY_PASSWORD = getenv('VALKEY_PASSWORD')
+VALKEY_PORT = int(getenv('VALKEY_PORT'))
+
+FASTAPI_WEBHOOK_URL = getenv('FASTAPI_WEBHOOK_URL')
+
+ADMINISTRATORS = [8829136374]
+GROUP_ID = int(getenv('GROUP_ID'))
+KBZPAY_PHONE_NUMBER = getenv('KBZPAY_PHONE_NUMBER')
+KBZPAY_FULL_NAME = getenv('KBZPAY_FULL_NAME')
+KBZPAY_AMOUNT = 3000

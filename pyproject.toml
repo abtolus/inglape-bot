@@ -1,0 +1,20 @@
+[project]
+name = "inglape-bot"
+version = "0.1.0"
+description = "Telegram bot for expanding your English vocabulary, using the Merriam-Webster dictionary and thesaurus."
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi[standard]",
+    "pyTelegramBotAPI",
+    "aiohttp",
+    "aiomysql",
+    "redis",
+    "openrouter",
+    "pyinflect",
+    "wonderwords",
+    "python-dotenv",
+    "requests"
+]
+
+[tool.fastapi]
+entrypoint = "main:app"

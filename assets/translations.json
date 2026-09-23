@@ -1,0 +1,55 @@
+{
+    "Your 14-day free trial or monthly subscription has expired. To keep your momentum going, please select a monthly subscription plan, using one of the payment methods below.": "သင်၏ ၁၄ ရက် အခမဲ့ အစမ်းသုံးခွင့်ကာလ၊ သို့မဟုတ် တစ်လစာ အသုံးပြုခွင့်ကာလ ကုန်ဆုံးပါပြီ။ ဆက်လက်ပြီးအသုံးပြုနိုင်ရန် တစ်လစာအစဉ်အစီကို အောက်တွင်ပေးထားသော ငွေပေးချေမှုနည်းလမ်းတစ်ခုခုအား အသုံးပြု၍ စာရင်းပေးသွင်းပါ။",
+
+    "Payment successful, and your subscription is active for 30 days. Let's kick things off with /start, shall we?": "ငွေပေးချေမှု အောင်မြင်စွာ ပြီးမြောက်ပါပြီ။ သင်၏ စာရင်းပေးသွင်းမှုသည် ရက် ၃၀ ကြာ အကျုံးဝင်နေမည်ဖြစ်ပါသည်။ စတင်အသုံးပြုရန် (/start) ဟု ပေးပို့ပါ။",
+
+    "Wilt thou learn anew, or weigh what thou hast learned?": "အသစ် သင်ယူ (Learn) လိုပါသလား၊ သို့မဟုတ် သင် လေ့လာခဲ့ပြီးသည်များကို ပြန်လည်သုံးသပ် (Review) လိုပါသလား။",
+
+    "Select three words from the following:": "အောက်ပါစကားလုံးများမှ သင် ပြန်လည်သုံးသပ်လိုသည့် စကားလုံး ၃ လုံးကို ရွေးချယ်၍",
+
+    "using the exact same format like this:": "ဖော်ပြပါ ပုံစံအတိုင်း ပေးပို့ပါ။",
+
+    "Learn these words, should they be granted unto thee:": "အောက်တွင်ပေးထားသော စကားလုံးများကို သင်ယူလိုပါက (Start) ကို နှိပ်ပါ၊ သို့မဟုတ် စကားလုံးအသစ်များ ထပ်မံရယူလိုပါက (Refresh) ကို နှိပ်ပါ။",
+
+    "Please select your recent words in the exact same format as the following:": "ကျေးဇူးပြု၍ စကားလုံးများကို ရွေးချယ်၍ အောက်ပါပုံစံအတိုင်း ပေးပို့ပါ။",
+
+    "The selected words from your recent history must be unique:": "စကားလုံး ၃ လုံးကို ရွေးချယ်ရာတွင် တူညီ၍မရပါ။",
+
+    "Not all your selected words were found in your recent history:": "ရွေးချယ်ထားသော စကားလုံး ၃ လုံးစလုံးသည် သင်၏ သင်ယူမှုမှတ်တမ်းတွင် မပါရှိပါ။",
+
+    "Review thy words, lest thou let them be forgotten:": "သင် လေ့လာခဲ့ပြီးသည့် အောက်ပါစကားလုံးများကို ပြန်လည်သုံးသပ်လိုပါက (Start) ကို နှိပ်ပါ၊ သို့မဟုတ် ထပ်မံရွေးချယ်လိုပါက (Refresh) ကို နှိပ်ပါ။",
+
+    "Connection kept dropping during the process of retrieving the words. Should your network be stable, select your recent words again:": "(Connection) ပြတ်တောက်မှုများကြောင့် စကားလုံးများကို ပြန်လည်ရယူသည့်လုပ်ငန်းစဉ် မအောင်မြင်ပါ။ ကျေးဇူးပြု၍ စကားလုံးများကို ပြန်လည်ရွေးချယ်ပါ။",
+
+    "The journey of learning hath borne fruit. Wilt thou learn anew, or weigh what thou hast learned?": "သင်ယူမှု အောင်မြင်စွာ ပြီးမြောက်ပါပြီ။ ယခုဆက်လက်ပြီး အသစ် သင်ယူ (Learn) လိုပါသလား၊ သို့မဟုတ် သင် လေ့လာခဲ့ပြီးသည်များကို ပြန်လည်သုံးသပ် (Review) လိုပါသလား။",
+
+    "Connection kept dropping during the process of evaluating your answers. Should your network be stable, resend your answers.": "(Connection) ပြတ်တောက်မှုများကြောင့် သင်၏အဖြေလွှာကို စစ်ဆေးသည့်လုပ်ငန်းစဉ် မအောင်မြင်ပါ။ ကျေးဇူးပြု၍ အဖြေများကို ပြန်လည်ပေးပို့ပါ။",
+
+    "Please provide your answers in the exact same format as the following:": "အဖြေများကို အောက်တွင်ဖော်ပြထားသော ပုံစံအတိုင်း ပေးပို့ပါ။",
+
+    "Provide a synonym for each of the following: (The answers must be from the Dictionary and Thesaurus you recently learned)": "အောက်တွင်ဖော်ပြထားသော စကားလုံးအစုများနှင့် အဓိပ္ပာယ်တူညီသည့် စကားလုံးများကို ပေးပို့ပါ။ အဖြေများသည် ယခုလေ့လာခဲ့သည့် (Dictionary) နှင့် (Thesaurus) တွင် ပါရှိရမည်။",
+
+    "Identify the term defined by each of the following: (The answers must be from the Dictionary and Thesaurus you recently learned)": "အောက်တွင်ပေးထားသော အဓိပ္ပာယ်ဖွင့်ဆိုချက်များနှင့် ကိုက်ညီသည့် စကားလုံးအစုများကို ပေးပို့ပါ။ အဖြေများသည် ယခုလေ့လာခဲ့သည့် (Dictionary) နှင့် (Thesaurus) တွင် ပါရှိရမည်။",
+
+    "Give a term matching each pair of synonyms in the following: (The answers must be from the Dictionary and Thesaurus you recently learned)": "အောက်ဖော်ပြပါ အဓိပ္ပာယ်တူစကားလုံးများနှင့် အသင့်လျော်ဆုံးဖြစ်သည့် အဖြေများကို ရွေးချယ်၍ ပေးပို့ပါ။ အဖြေများသည် ယခုလေ့လာခဲ့သည့် (Dictionary) နှင့် (Thesaurus) တွင် ပါရှိရမည်။",
+
+    "Write sentences using each of the following:": "အောက်ပါ စကားလုံးများကို အသုံးပြု၍ ပြီးပြည့်စုံသည့် စာကြောင်းများတည်ဆောက်ပါ။",
+
+    "Please make sure the screenshot is a single photo.": "ကျေးဇူးပြု၍ (Screenshot) တစ်ခုတည်းသာ ပေးပို့ပါ။",
+
+    "Connection kept dropping while processing the screenshot. Should your network be stable, send the screenshot again.": "(Connection) ပြတ်တောက်မှုများကြောင့် သင်၏ (Screenshot) ကို စစ်ဆေးသည့်လုပ်ငန်းစဉ် မအောင်မြင်ပါ။ ကျေးဇူးပြု၍ (Screenshot) ကို ပြန်လည်ပေးပို့ပါ။",
+
+    "Your session has expired due to inactivity. Please send /start to begin anew.": "သင်၏ (Session) သည် ၂ နာရီကြာ အသုံးပြုခြင်း မရှိသောကြောင့် သက်တမ်းကုန်ဆုံးပါပြီ။ (Session) အသစ်တစ်ခု စတင်ရန် (/start) ဟု ပေးပို့ပါ။",
+
+    "Which method would you prefer for selecting your recent 90 words?": "သင် လေ့လာခဲ့ပြီးသည်များကို မည်သည့်နည်းလမ်းဖြင့် ပြန်လည်သုံးသပ်လိုပါသနည်း။ ကိုယ်တိုင်ရွေးချယ် (Manual) လိုပါသလား၊ သို့မဟုတ် အလိုအလျောက်ရွေးချယ် (Automatic) ပေးသည်ကို ရယူလိုပါသလား။",
+
+    "No words were found in your recent history, perhaps you haven't learned any yet.": "သင်သည် မည်သည့်စကားလုံးများကိုမှ လေ့လာထားခြင်းမရှိသေးသောကြောင့် ပြန်လည်သုံးသပ်ခြင်း (Review) ကိုလုပ်ဆောင်၍ မရနိုင်ပါ။",
+
+    "Ready to solidify your knowledge with the Skill check?": "ယခုလေ့လာခဲ့သည်များနှင့် ပတ်သက်သည့် မေးခွန်းများကို ဖြေဆိုရန် အသင့်ဖြစ်နေပြီလား။",
+
+    "Your request was unsuccessful because the screenshot may be irrelevant, or the transaction has not been made yet.": "သင်၏ တောင်းဆိုချက် မအောင်မြင်ပါ။ (Screenshot) သည် ငွေပေးချေမှုနှင့် သက်ဆိုင်မှုမရှိသော (Screenshot) ဖြစ်ခြင်း၊ သို့မဟုတ် ငွေပေးချေမှု မပြုလုပ်ရသေးခြင်း များကြောင့် ဖြစ်နိုင်ပါသည်။",
+
+    "We received your screenshot, and we'll let you know when the administrator finished reviewing it.": "သင်၏ (Screenshot) ကို ရရှိထားပါသည်။ ကြီးကြပ်သူက ထို (Screenshot) ကို စစ်ဆေးပြီးသည့်အခါ ပြန်လည် အကြောင်းကြားပါမည်။",
+
+    "After making the payment, send me the E-receipt showing it was successful as a screenshot.": "ငွေလွှဲပြီးသည့်အခါ ငွေလွှဲမှုအောင်မြင်ကြောင်း ပြေစာ (E-receipt) ကို (Screenshot) အဖြစ် ပေးပို့ပါ။"
+}

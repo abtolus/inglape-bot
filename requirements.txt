@@ -1,7 +1,0 @@
-pyTelegramBotAPI
-python-dotenv
-pyinflect
-requests
-wonderwords
-openrouter
-mysql-connector-python
