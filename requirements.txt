@@ -1,0 +1,11 @@
+fastapi[standard]
+pyTelegramBotAPI
+aiohttp
+aiomysql
+redis
+openrouter
+pyinflect
+wonderwords
+python-dotenv
+requests
+cryptography

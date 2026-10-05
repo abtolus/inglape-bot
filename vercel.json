@@ -1,0 +1,12 @@
+{
+    "$schema": "https://openapi.vercel.sh/vercel.json",
+    "functions": {
+        "app.py": {
+            "maxDuration": 60
+        }
+    },
+    "crons": [{
+        "path": "/api/cron/clear-inactive",
+        "schedule": "30 17 * * *"
+    }]
+}

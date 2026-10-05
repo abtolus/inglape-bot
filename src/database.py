@@ -7,24 +7,29 @@ from src.config import *
 
 import json
 import gzip
+import secrets
 import asyncio
 import pymysql
 import aiomysql
 import functools
 
 __all__ = [
-    'pool', 'initialize_pool', 'get_profile', 'get_word', 'get_user_media', 'save_user_media', 'get_user_data', 'save_user_data', 'clear_user_data', 'get_recent_words', 'upsert_settings', 'upsert_user', 'upsert_word', 'upsert_subscription', 'upsert_last_active', 'insert_log', 'insert_payment', 'has_subscription', 'clear_inactive', 'redis'
+    'pool', 'initialize_pool', 'get_profile', 'get_word', 'get_user_media', 'save_user_media', 'get_user_data', 'save_user_data', 'clear_user_data', 'get_recent_words', 'upsert_settings', 'upsert_user', 'upsert_word', 'upsert_subscription', 'upsert_last_active', 'insert_log', 'insert_payment', 'has_subscription', 'clear_inactive', 'redis', 'ensure_redis', 'acquire_user_lock', 'release_user_lock', 'set_target_user', 'pop_target_user', 'set_administrator_request', 'pop_administrator_request'
 ]
 
-redis = Redis(
-    host=VALKEY_HOST,
-    password=VALKEY_PASSWORD,
-    port=VALKEY_PORT,
-    db=0,
-    ssl=True,
-    ssl_cert_reqs=None,
-    decode_responses=True
-)
+def get_new_redis() -> Redis:
+    return Redis(
+        host=VALKEY_HOST,
+        password=VALKEY_PASSWORD,
+        port=VALKEY_PORT,
+        db=0,
+        ssl=True,
+        ssl_cert_reqs=None,
+        decode_responses=True
+    )
+redis = get_new_redis()
+redis_state = {"lock": None, "loop": None, "ready": False}
+redis_unlock = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
 
 pool = None
 expiration: int = 7200
@@ -63,10 +68,46 @@ async def initialize_pool():
         password=MYSQL_PASSWORD,
         port=MYSQL_PORT,
         db=MYSQL_DATABASE,
-        minsize=6,
-        maxsize=18,
+        minsize=1,
+        maxsize=5,
+        pool_recycle=240,
+        connect_timeout=5,
         autocommit=True
     )
+
+async def ensure_redis() -> None:
+    global redis
+    loop = asyncio.get_running_loop()
+    if redis_state['loop'] is not loop:
+        redis_state.update(loop=loop, ready=False, lock=asyncio.Lock())
+    if redis_state['ready']: return
+    async with redis_state['lock']:
+        if redis_state['ready']: return
+        redis = get_new_redis()
+        await initialize_pool()
+        redis_state['ready'] = True
+
+async def acquire_user_lock(user_id: int, ttl: int = 60) -> str | None:
+    token = secrets.token_hex(8)
+    ok = await redis.set(f"lock:{user_id}", token, nx=True, ex=ttl)
+    return token if ok else None
+
+async def release_user_lock(user_id: int, token: str) -> None:
+    await redis.eval(redis_unlock, 1, f"lock:{user_id}", token)
+
+async def set_target_user(user_id: int, first_name: str, message_id: int) -> None:
+    await redis.set(f"pay:target:{user_id}", json.dumps([first_name, message_id]), ex=604800)
+
+async def pop_target_user(user_id: int) -> tuple:
+    raw = await redis.getdel(f"pay:target:{user_id}")
+    return tuple(json.loads(raw)) if raw else (None, None)
+
+async def set_administrator_request(admin_id: int, target_user_id: int, message_id: int) -> None:
+    await redis.set(f"pay:admin:{admin_id}", json.dumps([target_user_id, message_id]), ex=86400)
+
+async def pop_administrator_request(admin_id: int) -> tuple | None:
+    raw = await redis.getdel(f"pay:admin:{admin_id}")
+    return tuple(json.loads(raw)) if raw else None
 
 @asynccontextmanager
 async def get_pool_connection():
@@ -267,20 +308,15 @@ async def has_subscription(user_id: int) -> bool:
     now = datetime.now(timezone.utc)
     return bool(expired_at and expired_at > now) or bool(created_at and now - created_at <= timedelta(days=14))
 
-async def clear_inactive() -> None:
-    while True:
-        try:
-            condition = "last_active < NOW() - INTERVAL 30 DAY AND (expired_at IS NULL OR expired_at < NOW())"
-            async with get_pool_connection() as connection:
-                async with connection.cursor() as cursor:
-                    await cursor.execute(f"SELECT id FROM users WHERE {condition}")
-                    stale = [row[0] for row in await cursor.fetchall()]
-                    await cursor.execute("DELETE l FROM logs l INNER JOIN users u ON l.user_id = u.id WHERE u.last_active < NOW() - INTERVAL 30 DAY AND (u.expired_at IS NULL OR u.expired_at < NOW())")
-                    await cursor.execute(f"DELETE FROM users WHERE {condition}")
-            for i in range(0, len(stale), 500):
-                keys = [f"user:{user_id}{suffix}" for user_id in stale[i:i + 500] for suffix in ("", ":media",)]
-                await redis.delete(*keys)
-            await asyncio.sleep(86400)
-        except Exception as e:
-            print(e)
-            await asyncio.sleep(8)
+async def clear_inactive() -> int:
+    condition = "last_active < NOW() - INTERVAL 30 DAY AND (expired_at IS NULL OR expired_at < NOW())"
+    async with get_pool_connection() as connection:
+        async with connection.cursor() as cursor:
+            await cursor.execute(f"SELECT id FROM users WHERE {condition}")
+            stale = [row[0] for row in await cursor.fetchall()]
+            await cursor.execute("DELETE l FROM logs l INNER JOIN users u ON l.user_id = u.id WHERE u.last_active < NOW() - INTERVAL 30 DAY AND (u.expired_at IS NULL OR u.expired_at < NOW())")
+            await cursor.execute(f"DELETE FROM users WHERE {condition}")
+    for i in range(0, len(stale), 500):
+        keys = [f"user:{user_id}{suffix}" for user_id in stale[i:i + 500] for suffix in ("", ":media",)]
+        if keys: await redis.delete(*keys)
+    return len(stale)

@@ -18,6 +18,7 @@ with open('assets/words.txt', "r", encoding="utf-8") as f:
     common_words = set(line.strip() for line in f)
 
 session: aiohttp.ClientSession | None = None
+session_loop = None
 random_word = RandomWord()
 primary_executor = ThreadPoolExecutor(max_workers=3)
 secondary_executor = ThreadPoolExecutor(max_workers=2)
@@ -40,10 +41,11 @@ regex_cleaned = compile(r"\*\d+")
 pos = {"noun": ["NNS"], "verb": ["VBD", "VBG", "VBN", "VBZ"], "adjective": ["JJR", "JJS"], "adverb": ["RBR", "RBS"]}
 
 async def get_lexicon_session() -> None:
-    global session
-    if session is None or session.closed:
-        timeout = aiohttp.ClientTimeout(total=5)
-        session = aiohttp.ClientSession(timeout=timeout)
+    global session, session_loop
+    loop = asyncio.get_running_loop()
+    if session is None or session.closed or session_loop is not loop:
+        session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5))
+        session_loop = loop
 async def close_lexicon_session() -> None:
     global session
     if session and not session.closed:
