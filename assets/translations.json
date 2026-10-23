@@ -53,5 +53,9 @@
 
     "After making the payment, send me the E-receipt showing it was successful as a screenshot.": "ငွေလွှဲပြီးသည့်အခါ ငွေလွှဲမှုအောင်မြင်ကြောင်း ပြေစာ (E-receipt) ကို (Screenshot) အဖြစ် ပေးပို့ပါ။",
 
-    "We received your answers and are now evaluating them. This usually takes a few seconds.": "သင်၏ အဖြေများကို လက်ခံရရှိထားပြီး စစ်ဆေးခြင်းလုပ်ငန်းစဉ်ကို ဆောင်ရွက်နေပါသည်။ စက္ကန့်အနည်းငယ် ကြာမြင့်နိုင်ပါသည်။"
+    "We received your answers and are now evaluating them. This usually takes a few seconds.": "သင်၏ အဖြေများကို လက်ခံရရှိထားပြီး စစ်ဆေးခြင်းလုပ်ငန်းစဉ်ကို ဆောင်ရွက်နေပါသည်။ စက္ကန့်အနည်းငယ် ကြာမြင့်နိုင်ပါသည်။",
+
+    "We are going to evaluate your answers again. Please wait a few seconds.": "သင်၏ အဖြေများကို နောက်တစ်ကြိမ် ပြန်လည်စစ်ဆေးနေပါသည်။ စက္ကန့်အနည်းငယ် စောင့်ပေးပါ။",
+
+    "Your payment is under review, so you can't use this bot right now.": "သင်၏ ငွေပေးချေမှုကို စစ်ဆေးနေဆဲဖြစ်ပါသဖြင့် ယခုလက်ရှိ အသုံးပြု၍ မရနိုင်ပါ။"
 }

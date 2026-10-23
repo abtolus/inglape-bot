@@ -54,9 +54,10 @@ class PaymentState(str, Enum):
 class PaymentFilter(AdvancedCustomFilter):
     key = 'payment'
     async def check(self, message: Message, text: bool) -> bool:
-        if message.chat.type not in ['private']: return text == False
+        chat = message.message.chat if isinstance(message, telebot.types.CallbackQuery) else message.chat
+        if chat.type not in ['private']: return text == False
         user_id = message.from_user.id
-        user_media = await get_user_data(user_id)
+        user_media = await get_user_media(user_id)
         boolean = user_media.get("payment_state") is not None
         return boolean == text
 
@@ -132,8 +133,9 @@ async def get_skill_check(user_id: int) -> str:
     text += get_global_translated(raw, settings.get("language", "en-US"))
     temporary = []
     for i, entry in enumerate(sections.popleft()):
-        text += f"\n<b>{i+1}</b> <i>{entry.get('text').strip()}</i>"
-        temporary.append(entry.get('hw'))
+        hw = entry.get('hw')
+        text += f"\n<b>{i+1}</b> <i>{entry.get('text').strip()}</i> ({len(hw)})"
+        temporary.append(hw)
     user_data['answers'].append(temporary)
     text += "\n\n"
 
@@ -141,8 +143,9 @@ async def get_skill_check(user_id: int) -> str:
     text += get_global_translated(raw, settings.get("language", "en-US"))
     temporary = []
     for i, entry in enumerate(sections.popleft()):
-        text += f"\n<b>{i+1}</b> <i>{', '.join(entry.get('syns', []))}</i>"
-        temporary.append(entry.get('hw'))
+        hw = entry.get('hw')
+        text += f"\n<b>{i+1}</b> <i>{', '.join(entry.get('syns', []))}</i> ({len(hw)})"
+        temporary.append(hw)
     user_data['answers'].append(temporary)
     text += "\n\n"
 
@@ -533,19 +536,26 @@ async def evaluate_sentences(sentences: str) -> list:
     # Fallback
     return [True] * expected
 
-async def try_again(chat_id: int) -> None:
+async def try_again(chat_id: int, user_id: int) -> None:
     markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("Abort checking", callback_data="tryAgainButton-0"),
          InlineKeyboardButton("Try again", callback_data="tryAgainButton-1")]
     ])
     text = "Too many requests are being sent at the moment. Please <b>Try again</b> later, or <b>Abort checking</b> if you do not need your answers to be evaluated."
 
-    await bot.send_message(
+    call_message = await bot.send_message(
         chat_id=chat_id,
         text=text,
         parse_mode="HTML",
         reply_markup=markup
     )
+
+    user_media = await get_user_media(user_id)
+    user_media['last_message'] = {
+        "chat_id": call_message.chat.id,
+        "message_id": call_message.message_id
+    }
+    await save_user_media(user_id, user_media)
 
 async def evaluate_answers(answers: list, chat_id: int, user_id: int) -> str:
     user_data = await get_user_data(user_id)
@@ -580,7 +590,7 @@ async def evaluate_answers(answers: list, chat_id: int, user_id: int) -> str:
         user_data['pending'] = answers
         await save_user_data(user_id, user_data)
 
-        await try_again(chat_id)
+        await try_again(chat_id, user_id)
         return None
 
     verdicts = dict(zip(to_check, stage2))
@@ -822,6 +832,12 @@ async def handle_payments(message, maximum: int = 3):
                 await send_payments_format(message.chat.id, text)
                 return
 
+            user_media = await get_user_media(user_id)
+            last_message = user_media.get("last_message")
+            if last_message:
+                try: await bot.edit_message_reply_markup(chat_id=message.chat.id, message_id=last_message.get("message_id"), reply_markup=None)
+                except Exception: pass
+
             photo = message.photo[-1].file_id
             first_name = message.from_user.first_name
             caption = f"User {first_name} ({str(user_id)}) requested approval for the Valedictorian Edition plan with a screenshot of the E-receipt attached."
@@ -844,7 +860,6 @@ async def handle_payments(message, maximum: int = 3):
             if call_message:
                 await set_target_user(user_id, message.from_user.first_name, call_message.message_id,)
 
-            user_media = await get_user_media(user_id)
             user_media['payment_state'] = PaymentState.PAYMENT_PENDING
             await save_user_media(user_id, user_media)
 
@@ -886,7 +901,20 @@ async def user_lock(user_id: int):
             await release_user_lock(user_id, token)
 
 @bot.message_handler(payment=True, chat_types=['private'], content_types=content_type_media)
-async def ignore(message): return
+async def ignore_message(message):
+    user_id = message.from_user.id
+    user_data = await get_user_data(user_id)
+    settings = user_data.get("settings") or {}
+    raw = "Your payment is under review, so you can't use this bot right now."
+    text = get_global_translated(raw, settings.get("language", "en-US"))
+
+    await bot.send_message(
+        chat_id=message.chat.id,
+        text=text
+    )
+@bot.callback_query_handler(payment=True, func=lambda call: True)
+async def ignore_callback(call):
+    await bot.answer_callback_query(call.id, text="Your payment is under review")
 
 @bot.message_handler(payment=False, handle=False, chat_types=['private'], commands=['start'])
 async def send_welcome(message):
@@ -980,7 +1008,7 @@ async def state_dispatcher(message):
         elif state == HandleState.HANDLE_TRANSACTION_NUMBER:
             await handle_transaction_number(message)
 
-@bot.callback_query_handler(func=lambda call: True)
+@bot.callback_query_handler(payment=False, func=lambda call: True)
 async def handle_query(call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
@@ -1048,12 +1076,15 @@ async def handle_query(call):
                 settings = user_data.get("settings")
                 text += get_global_translated(raw, settings.get("language", "en-US"))
 
+                reply_markup = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Back to the Main Menu", callback_data="back-kbzpay")]
+                ])
                 call_message = await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=call.message.message_id,
                     text=text,
                     parse_mode="HTML",
-                    reply_markup=None
+                    reply_markup=reply_markup
                 )
                 user_media['last_message'] = {
                     "chat_id": call_message.chat.id,
@@ -1132,11 +1163,28 @@ async def handle_query(call):
                     reply_markup=None
                 )
         return
+    elif call.data == "back-kbzpay":
+        async with user_lock(user_id) as acquired:
+            if not acquired:
+                await bot.answer_callback_query(call.id, text="Processing your previous request")
+                return
+
+            await bot.answer_callback_query(call.id, text="Going back to the Main Menu")
+            user_data = await get_user_data(user_id)
+            user_data['handle_state'] = None
+            await save_user_data(user_id, user_data)
+            await send_subscription(call.message, user_id)
+        return
 
     _, subscribed, user_data = await asyncio.gather(
         upsert_last_active(user_id), has_subscription(user_id), get_user_data(user_id)
     )
-    if subscribed == False:
+    if subscribed == False and user_data.get("is_active") == False:
+        if user_data.get("handle_state"):
+            user_data['handle_state'] = None
+            await save_user_data(user_id, user_data)
+            user_data = await get_user_data(user_id)
+
         await send_subscription(call.message, user_id)
         return
 
@@ -1453,10 +1501,18 @@ async def handle_query(call):
             if answers:
                 user_data['handle_state'] = None
                 await save_user_data(user_id, user_data)
-                message = await evaluate_answers(answers, chat_id, user_id)
                 try:
                     await bot.delete_message(chat_id=chat_id, message_id=call.message.message_id)
                 except Exception: pass
+
+                raw = "We are going to evaluate your answers again. Please wait a few seconds."
+                text = get_global_translated(raw, settings.get("language", "en-US"))
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text
+                )
+
+                message = await evaluate_answers(answers, chat_id, user_id)
                 if message: await clear_session(chat_id, user_id, message)
             else:
                 try:
@@ -1469,8 +1525,7 @@ async def handle_query(call):
                 call_message = await bot.send_message(
                     chat_id=chat_id,
                     text=text,
-                    parse_mode="HTML",
-                    reply_markup=main_menu() if mode == 0 else None
+                    parse_mode="HTML"
                 )
 
                 user_media = await get_user_media(user_id)
